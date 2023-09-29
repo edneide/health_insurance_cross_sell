@@ -268,5 +268,5 @@ gridExtra::grid.arrange(gender_plt, driving_license_plt,
                         region_code_plt, previously_insured_plt,
                         vehicle_age_plt, vehicle_damage_plt, 
                         policy_sales_channel_plt, response_plt,
-                        ncol = 4, nrow = 2)
+                        ncol = 2, nrow = 4)
 ```

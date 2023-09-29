@@ -168,7 +168,7 @@ age_plt <- num_attributes %>%
   ggplot(aes(x = age)) + 
   geom_histogram(aes(y = after_stat(density)), binwidth = 1,
                  color = "gray", fill = "lightblue", alpha = 0.5) + geom_density(color = "blue") +
-  labs(x = "Age", y = "Density", title = "Customers Age Distribution") +
+  labs(x = "Age", y = "Density", title = "Customers Age \nDistribution") +
   theme_minimal()
 
 #  health_annual_paid ---------------------
@@ -177,7 +177,7 @@ paid_plt <- num_attributes %>%
   geom_histogram(aes(y = after_stat(density)),
                  binwidth = 10000,
                  color = "gray", fill = "lightblue", alpha = 0.5) + geom_density(color = "blue") +
-  labs(x = "Health Annual Paid", y = "Density", title = "Customers Payments Distribution") +
+  labs(x = "Health Annual Paid", y = "Density", title = "Customers Payments \nDistribution") +
   theme_minimal()
 
 #  days_associated ---------------------
@@ -185,7 +185,7 @@ days_plt <- num_attributes %>%
   ggplot(aes(x = days_associated)) + 
   geom_histogram(aes(y = after_stat(density)),
                  color = "gray", fill = "lightblue", alpha = 0.5) + geom_density(color = "blue") +
-  labs(x = "Days Associated", y = "Density", title = "Customers Days Associated Distribution") +
+  labs(x = "Days Associated", y = "Density", title = "Customers Days \nAssociated \nDistribution") +
   theme_minimal()
 
 library(gridExtra)
@@ -268,5 +268,5 @@ gridExtra::grid.arrange(gender_plt, driving_license_plt,
                         region_code_plt, previously_insured_plt,
                         vehicle_age_plt, vehicle_damage_plt, 
                         policy_sales_channel_plt, response_plt,
-                        ncol = 4, nrow = 2)
+                        ncol = 2, nrow = 4)
 ```
