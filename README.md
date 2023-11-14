@@ -8,4 +8,6 @@
 </p>
 
 
-You can find the complete R code for this project [here](https://edneide.github.io/health_insurance_cross_sell/).
+The scripts for this project can be found on the links below:
+
+[Part 01](https://rpubs.com/edneide_ramalho/health_insurance_cross_sell_part01).
