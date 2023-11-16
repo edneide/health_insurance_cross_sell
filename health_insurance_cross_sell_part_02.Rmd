@@ -1,0 +1,233 @@
+---
+title: "Health Insurance Cross Sell - Part 02"
+author: "Edneide Ramalho"
+date: "`r format(Sys.time(), '%d/%m/%Y')`"
+output: 
+    html_document:
+      highlight: textmate
+      logo: logo.png
+      theme: jou
+      number_sections: yes
+      toc: yes
+      toc_float:
+        collapsed: yes
+        smooth_scroll: no
+      df_print: paged
+      code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Imports
+
+```{r pacotes}
+library(tidyverse)
+library(janitor)
+library(readr)
+library(gtsummary)
+library(summarytools)
+library(kableExtra)
+library(knitr)
+library(gridExtra)
+library(summarytools)
+library(randomForest)
+library(reshape2)
+library(tidymodels)
+```
+
+# Helper Functions
+
+## Top @K precision and recall
+
+This function returns a dataframe with K rows. The last row will have the values of @K metrics.
+
+```{r}
+# Creating function  --------------------------
+metrics_at_k_function <- function(model_name, model_results, k){
+  
+  df_results <- model_results %>% 
+    arrange(desc(.pred_yes)) %>% 
+    mutate(
+      TP = ifelse(.pred_class == "yes" & response == "yes", 1, 0),
+      FP = ifelse(.pred_class == "yes" & response == "no", 1, 0),
+      FN = ifelse(.pred_class == "no" & response == "yes", 1, 0),
+      TN = ifelse(.pred_class == "no" & response == "no", 1, 0)
+      ) 
+  
+  # Create list for precision and recall
+  precision_at_k <- list()
+  recall_at_k <- list()
+
+  # Populate the metric list
+  for (i in 1:k) {
+    subset_k <- df_results %>% 
+    dplyr_row_slice(1:i)
+    
+    precision_at_k[[i]] <- (subset_k$TP %>% sum())/(subset_k$TP %>% sum() + subset_k$FP %>% sum())
+  
+    recall_at_k[[i]] <- (subset_k$TP %>% sum())/(subset_k$TP %>% sum() + subset_k$FN %>% sum())
+}
+
+  # Complete dataframe
+    metrics_at_k_df <- df_results %>% 
+      dplyr_row_slice(1:k) %>% 
+      mutate(
+        precision_at_k = unlist(precision_at_k),
+        recall_at_k = unlist(recall_at_k)
+        )
+    
+    final_at_k_df <- tibble(model = model_name, k = k) %>% 
+      bind_cols(
+        metrics_at_k_df %>% 
+          slice(k) %>% 
+          select(precision_at_k, recall_at_k)
+      )
+      
+      
+    
+    return(list(metrics_at_k_df, final_at_k_df))
+}
+```
+
+## Gain & Lift Curves
+
+```{r}
+curves_function <-  function(model_results){
+  gain_plt <- gain_curve(model_results, response, .pred_yes) %>% 
+  autoplot()
+  
+  lift_plt <- lift_curve(model_results, response, .pred_yes) %>%    autoplot()
+
+  gridExtra::grid.arrange(gain_plt, lift_plt, ncol = 2)
+}
+```
+
+# Data Collection
+
+```{r}
+df_selected <- readRDS("df_selected.rds")
+```
+
+# Pre-processing
+
+```{r}
+region_encoder <- readRDS("region_encoder.rds")
+policy_encoder <- readRDS("policy_encoder.rds")
+
+# Create function
+encoder_function <- function(df){
+  df %>% 
+  left_join(region_encoder) %>% 
+  select(-region_code) %>% 
+  rename(region_code = region_num) %>% 
+  left_join(policy_encoder) %>% 
+  select(-policy_sales_channel) %>% 
+  rename(policy_sales_channel = policy_num) 
+}
+```
+
+```{r}
+df_selected <- encoder_function(df_selected)
+```
+
+## Split into train and test datasets
+
+```{r}
+set.seed(123)
+
+df_split <- df_selected %>% 
+  initial_split(prop = 0.80, strata = response)
+
+df_train <- df_split %>% 
+  training()
+
+df_test <- df_split %>% 
+  testing()
+
+```
+
+## Applying steps
+
+```{r}
+# Write the recipe ------------------------
+df_recipe <- recipe(response ~ .,
+       data = df_train %>% select(-id)) %>% 
+  step_normalize(age, days_associated) %>% 
+  step_scale(health_annual_paid) %>% 
+  step_dummy(all_nominal(), -all_outcomes())
+
+# Train the recipe -----------------------
+df_prep <- df_recipe %>% 
+  prep(training = df_train)
+
+df_train_preprocessed <- df_prep %>% 
+  bake(new_data = df_train)
+
+df_test_preprocessed <- df_prep %>% 
+  bake(new_data = df_test)
+```
+
+# 💻 Logistic Regression
+
+**Training time**: 2.27 seconds.
+
+```{r, eval=FALSE}
+# Model Specification -----------
+logistic_model <- logistic_reg() %>% 
+  set_engine('glm') %>% 
+  set_mode('classification')
+
+# Model Fitting -----------
+start_time <- Sys.time()
+
+logistic_fit <- logistic_model %>% 
+  fit(response ~., 
+      data = df_train_preprocessed)
+
+end_time <- Sys.time()
+
+print(end_time - start_time)
+
+# Save result in RDS -----------
+saveRDS(logistic_fit, "logistic_fit.rds")
+```
+
+```{r}
+# Read RDS result -----------
+logistic_fit <- readRDS("logistic_fit.rds")
+
+# Prediction ----------
+## Classes ------------
+class_preds <- logistic_fit %>% 
+  predict(new_data = df_test_preprocessed,
+          type = 'class')
+## Probabilities ------------
+prob_preds <- logistic_fit %>% 
+  predict(new_data = df_test_preprocessed,
+          type = 'prob')
+
+# Combine results -----------
+lr_results <- df_test %>% 
+  select(id, response) %>% 
+  bind_cols(class_preds, prob_preds)
+
+# Confusion Matrix ------------
+confusion_matrix_lr <-  conf_mat(
+  lr_results, truth = response, estimate = .pred_class
+)
+
+# Final @K Metrics --------------------
+lr_metrics_at_K <- metrics_at_k_function(
+  "Logistic Regression", 
+  lr_results, 2000)[[2]]
+lr_metrics_at_K
+
+# Gain and lift curves ---------------
+curves_function(lr_results)
+```
+
+**Gain**: By approaching 25% of the ordered list, \~60% of all interested customers are reached.
+
+**Lift**: By approaching 25% of the ordered list, the model performs \~2.3 times better than the random list.

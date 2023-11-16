@@ -741,6 +741,7 @@ importance(rf_model) %>%
 
 ```{r}
 selected_columns <- c(
+  "id",
   "age",
   "vehicle_damage",
   "days_associated",
@@ -755,7 +756,7 @@ selected_columns <- c(
 ```{r}
 # Final dataset
 df_selected <- df_cleaned %>% 
-  select(all_of(selected_columns)) %>% names()
+  select(all_of(selected_columns))
 
 saveRDS(df_selected, "df_selected.rds")
 ```
