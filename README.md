@@ -14,14 +14,15 @@
 
 The scripts for this project can be found on the links below:
 
--   [Part 01](https://rpubs.com/edneide_ramalho/health_insurance_cross_sell_part01)
+-   [Part 01](https://rpubs.com/edneide_ramalho/health_insurance_cross_sell_part01): In this part we collect the data, clean the data, create and test hypothesis, and finish with selecting the features that will be used to train the models.
+-   [Part 02](https://rpubs.com/edneide_ramalho/project_health_insurance_part02): In this part we train the first models such as Logistic Regression, Decision Tree, Random Forest, KNN, and XGBoost.
 
 The data for this project can be found on [Kaggle](https://www.kaggle.com/datasets/anmolkumar/health-insurance-cross-sell-prediction)
 
 Below, you can find the **dataset dictionary**.
 
 | **Variable**           | **Meaning**                                                        |
-|------------------------|--------------------------------------------------------------------|
+|--------------------|----------------------------------------------------|
 | `id`                   | Unique ID for the customer                                         |
 | `gender`               | Gender of the customer                                             |
 | `age`                  | Age of the customer                                                |

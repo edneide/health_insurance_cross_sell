@@ -169,7 +169,7 @@ df_test_preprocessed <- df_prep %>%
   bake(new_data = df_test)
 ```
 
-# 💻 Logistic Regression
+# Logistic Regression 💻 
 
 **Training time**: 2.27 seconds.
 
@@ -231,3 +231,11 @@ curves_function(lr_results)
 **Gain**: By approaching 25% of the ordered list, \~60% of all interested customers are reached.
 
 **Lift**: By approaching 25% of the ordered list, the model performs \~2.3 times better than the random list.
+
+# Decision Tree 💻 
+
+**Training time**:
+
+```{r}
+
+```
