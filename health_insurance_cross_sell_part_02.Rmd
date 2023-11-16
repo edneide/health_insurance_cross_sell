@@ -221,8 +221,11 @@ confusion_matrix_lr <-  conf_mat(
 # Final @K Metrics --------------------
 lr_metrics_at_K <- metrics_at_k_function(
   "Logistic Regression", 
-  lr_results, 2000)[[2]]
-lr_metrics_at_K
+  lr_results, 2000)
+lr_metrics_at_K[[2]]
+
+# Save metrics in RDS
+saveRDS(lr_metrics_at_K, "lr_metrics_at_K.rds")
 
 # Gain and lift curves ---------------
 curves_function(lr_results)
@@ -234,8 +237,72 @@ curves_function(lr_results)
 
 # Decision Tree 💻 
 
-**Training time**:
+**Training time**: 0.97 segundos.
+
+```{r, eval=FALSE}
+# Model Specification -----------
+dt_model <- decision_tree(tree_depth = 20) %>%
+  set_engine("rpart") %>%
+  set_mode("classification")
+
+# Model Fitting -----------
+start_time <- Sys.time()
+
+dt_fit <- dt_model %>%
+  fit(response ~ .,
+      data = df_train_preprocessed)
+
+end_time <- Sys.time()
+
+print(end_time - start_time)
+
+# Save result in RDS -----------
+saveRDS(dt_fit, "dt_fit.rds")
+```
 
 ```{r}
+# Read RDS result -----------
+dt_fit <- readRDS("dt_fit.rds")
 
+# Prediction ----------
+## Classes ------------
+class_preds <- dt_fit %>% 
+  predict(new_data = df_test_preprocessed,
+          type = 'class')
+## Probabilities ------------
+prob_preds <- dt_fit %>% 
+  predict(new_data = df_test_preprocessed,
+          type = 'prob')
+
+# Combine results -----------
+dt_results <- df_test %>% 
+  select(id, response) %>% 
+  bind_cols(class_preds, prob_preds)
+
+# Confusion Matrix ------------
+confusion_matrix_dt <-  conf_mat(
+  dt_results, truth = response, estimate = .pred_class
+)
+
+# Final @K Metrics --------------------
+dt_metrics_at_K <- metrics_at_k_function(
+  "Decision Tree", 
+  dt_results, 2000)
+dt_metrics_at_K[[2]]
+
+# Save results in rds
+saveRDS(dt_metrics_at_K, "dt_metrics_at_K")
+
+# Gain and lift curves ---------------
+# curves_function(dt_results)
 ```
+
+For this model, in particular, it is not possible to plot the gain and lift curves, because there is no variation in the probabilities for "yes" and "no", as you can see below:
+
+```{r}
+dt_metrics_at_K[[1]] %>% 
+  select(.pred_yes, .pred_no) %>% 
+  summary()
+```
+
+# Decision Tree 💻 
