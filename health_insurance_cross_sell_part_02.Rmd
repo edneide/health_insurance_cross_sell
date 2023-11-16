@@ -237,7 +237,7 @@ curves_function(lr_results)
 
 # Decision Tree 💻 
 
-**Training time**: 0.97 segundos.
+**Training time**: 0.97 seconds.
 
 ```{r, eval=FALSE}
 # Model Specification -----------
@@ -291,7 +291,7 @@ dt_metrics_at_K <- metrics_at_k_function(
 dt_metrics_at_K[[2]]
 
 # Save results in rds
-saveRDS(dt_metrics_at_K, "dt_metrics_at_K")
+saveRDS(dt_metrics_at_K, "dt_metrics_at_K.rds")
 
 # Gain and lift curves ---------------
 # curves_function(dt_results)
@@ -305,4 +305,247 @@ dt_metrics_at_K[[1]] %>%
   summary()
 ```
 
-# Decision Tree 💻 
+# Random Forest 💻 
+
+**Training time**: 7.56 minutes.
+
+```{r, eval=FALSE}
+# Model Specification -----------
+rf_model <- rand_forest(
+  mtry = 3,
+  trees = 1000,
+  min_n = 100
+) %>%
+  set_mode("classification") %>%
+  set_engine("ranger")
+
+# Model Fitting -----------
+start_time <- Sys.time()
+
+rf_fit <- rf_model %>%
+  fit(response ~ .,
+      data = df_train_preprocessed)
+
+end_time <- Sys.time()
+
+print(end_time - start_time)
+
+# Save result in RDS -----------
+saveRDS(rf_fit, "rf_fit.rds")
+```
+
+```{r}
+# Read RDS result -----------
+rf_fit <- readRDS("rf_fit.rds")
+
+# Prediction ----------
+## Classes ------------
+class_preds <- rf_fit %>% 
+  predict(new_data = df_test_preprocessed,
+          type = 'class')
+## Probabilities ------------
+prob_preds <- rf_fit %>% 
+  predict(new_data = df_test_preprocessed,
+          type = 'prob')
+
+# Combine results -----------
+rf_results <- df_test %>% 
+  select(id, response) %>% 
+  bind_cols(class_preds, prob_preds)
+
+# Confusion Matrix ------------
+confusion_matrix_rf <-  conf_mat(
+  rf_results, truth = response, estimate = .pred_class
+)
+
+# Final @K Metrics --------------------
+rf_metrics_at_K <- metrics_at_k_function(
+  "Random Forest", 
+  rf_results, 2000)
+rf_metrics_at_K[[2]]
+
+# Save results in rds
+saveRDS(rf_metrics_at_K, "rf_metrics_at_K.rds")
+
+# Gain and lift curves ---------------
+curves_function(rf_results)
+```
+
+**Gain**: By approaching 25% of the ordered list, \~65% of all interested customers are reached.
+
+**Lift**: By approaching 25% of the ordered list, the model performs \~2.7 times better than the random list.
+
+# XGBoost 💻 
+
+**Training time**: 5.21 minutes.
+
+```{r, eval=FALSE}
+# Model Specification -----------
+xgb_model <- boost_tree(
+  mtry = 6,
+  trees = 1000,
+  min_n = 28,
+  tree_depth = 14,
+  loss_reduction = 0.01,
+  sample_size = 0.27
+  ) %>%
+  set_mode("classification") %>%
+  set_engine("xgboost")
+
+# Model Fitting -----------
+start_time <- Sys.time()
+
+xgb_fit <- xgb_model %>%
+  fit(response ~ .,
+      data = df_train_preprocessed)
+
+end_time <- Sys.time()
+
+print(end_time - start_time)
+
+# Save result in RDS -----------
+saveRDS(xgb_fit, "xgb_fit.rds")
+```
+
+```{r}
+# Read RDS result -----------
+xgb_fit <- readRDS("xgb_fit.rds")
+
+# Prediction ----------
+## Classes ------------
+class_preds <- xgb_fit %>% 
+  predict(new_data = df_test_preprocessed,
+          type = 'class')
+## Probabilities ------------
+prob_preds <- xgb_fit %>% 
+  predict(new_data = df_test_preprocessed,
+          type = 'prob')
+
+# Combine results -----------
+xgb_results <- df_test %>% 
+  select(id, response) %>% 
+  bind_cols(class_preds, prob_preds)
+
+# Confusion Matrix ------------
+confusion_matrix_xgb <-  conf_mat(
+  xgb_results, truth = response, estimate = .pred_class
+)
+
+# Final @K Metrics --------------------
+xgb_metrics_at_K <- metrics_at_k_function(
+  "XGBoost", 
+  xgb_results, 2000)
+xgb_metrics_at_K[[2]]
+
+# Save results in rds
+saveRDS(xgb_metrics_at_K, "xgb_metrics_at_K.rds")
+
+# Gain and lift curves ---------------
+curves_function(xgb_results)
+```
+
+**Gain**: By approaching 25% of the ordered list, \~61% of all interested customers are reached.
+
+**Lift**: By approaching 25% of the ordered list, the model performs \~2.4 times better than the random list.
+
+# KNN 💻 
+
+**Training time**: 18.67 mins.
+
+**Prediction time: 9.54 mins.**
+
+```{r, eval=FALSE}
+library(kknn)
+# Model Specification -----------
+knn_model <- nearest_neighbor(weight_func = "rectangular", 
+                              neighbors = 3) %>% 
+  set_mode("classification") %>% 
+  set_engine("kknn")
+
+# Paralleliza fitting process
+doParallel::registerDoParallel()
+
+# Model Fitting -----------
+start_time <- Sys.time()
+
+knn_fit <- knn_model %>%
+  fit(response ~ .,
+      data = df_train_preprocessed)
+
+end_time <- Sys.time()
+
+print(end_time - start_time)
+
+# Save result in RDS -----------
+saveRDS(knn_fit, "knn_fit.rds")
+
+# Read RDS result -----------
+knn_fit <- readRDS("knn_fit.rds")
+
+# Paralleliza prediction process
+doParallel::registerDoParallel()
+
+# Prediction ----------
+start_time <- Sys.time()
+## Classes ------------
+class_preds <- knn_fit %>% 
+  predict(new_data = df_test_preprocessed,
+          type = 'class')
+## Probabilities ------------
+prob_preds <- knn_fit %>% 
+  predict(new_data = df_test_preprocessed,
+          type = 'prob')
+
+end_time <- Sys.time()
+print(end_time - start_time)
+```
+
+```{r}
+# Combine results -----------
+knn_results <- df_test %>% 
+  select(id, response) %>% 
+  bind_cols(class_preds, prob_preds)
+
+# Confusion Matrix ------------
+confusion_matrix_knn <-  conf_mat(
+  knn_results, truth = response, estimate = .pred_class
+)
+
+# Final @K Metrics --------------------
+knn_metrics_at_K <- metrics_at_k_function(
+  "KNN", 
+  knn_results, 2000)
+knn_metrics_at_K[[2]]
+
+# Save results in rds
+saveRDS(knn_metrics_at_K, "knn_metrics_at_K.rds")
+
+# Gain and lift curves ---------------
+curves_function(knn_results)
+```
+
+**Gain**: By approaching 25% of the ordered list, \~56% of all interested customers are reached.
+
+**Lift**: By approaching 25% of the ordered list, the model performs \~2.3 times better than the random list.
+
+# **Models Single Performance**
+
+```{r}
+# Reading model results 
+lr_metrics <- readRDS("lr_metrics_at_K.rds")
+rf_metrics <- readRDS("rf_metrics_at_K.rds")
+dt_metrics <- readRDS("dt_metrics_at_K.rds")
+xgb_metrics <- readRDS("xgb_metrics_at_K.rds")
+knn_metrics <- readRDS("knn_metrics_at_K.rds")
+
+# Showing a table comparing models
+models_comparison_df <- lr_metrics[[2]] %>% 
+  bind_rows(rf_metrics[[2]], 
+            dt_metrics[[2]], 
+            xgb_metrics[[2]],
+            knn_metrics[[2]])
+
+models_comparison_df
+```
+
+Among the trained models, if we have to choose at this point, we would pick the model with the higher recall @K. In this way, either KNN or XGBoost would give us the best result. However, the XGBoost model takes less time to run, thus this model would be selected.
