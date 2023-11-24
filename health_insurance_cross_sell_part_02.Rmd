@@ -99,8 +99,8 @@ curves_function <-  function(model_results){
   autoplot()
   
   lift_plt <- lift_curve(model_results, response, .pred_yes) %>%    autoplot()
-
-  gridExtra::grid.arrange(gain_plt, lift_plt, ncol = 2)
+  
+  return(gridExtra::grid.arrange(gain_plt, lift_plt, ncol = 2))
 }
 ```
 
@@ -169,7 +169,7 @@ df_test_preprocessed <- df_prep %>%
   bake(new_data = df_test)
 ```
 
-# Logistic Regression 💻 
+# Logistic Regression 💻
 
 **Training time**: 2.27 seconds.
 
@@ -235,7 +235,7 @@ curves_function(lr_results)
 
 **Lift**: By approaching 25% of the ordered list, the model performs \~2.3 times better than the random list.
 
-# Decision Tree 💻 
+# Decision Tree 💻
 
 **Training time**: 0.97 seconds.
 
@@ -305,7 +305,7 @@ dt_metrics_at_K[[1]] %>%
   summary()
 ```
 
-# Random Forest 💻 
+# Random Forest 💻
 
 **Training time**: 7.56 minutes.
 
@@ -375,7 +375,7 @@ curves_function(rf_results)
 
 **Lift**: By approaching 25% of the ordered list, the model performs \~2.7 times better than the random list.
 
-# XGBoost 💻 
+# XGBoost 💻
 
 **Training time**: 5.21 minutes.
 
@@ -448,7 +448,7 @@ curves_function(xgb_results)
 
 **Lift**: By approaching 25% of the ordered list, the model performs \~2.4 times better than the random list.
 
-# KNN 💻 
+# KNN 💻
 
 **Training time**: 18.67 mins.
 
@@ -521,7 +521,14 @@ knn_metrics_at_K[[2]]
 saveRDS(knn_metrics_at_K, "knn_metrics_at_K.rds")
 
 # Gain and lift curves ---------------
-curves_function(knn_results)
+plt_gain_knn <- gain_curve(knn_results, response, .pred_yes) %>% 
+  autoplot() 
+
+plt_gain_knn +
+  ggtitle("Gain Curve - KNN")
+
+lift_curve(knn_results, response, .pred_yes) %>% 
+  autoplot()
 ```
 
 **Gain**: By approaching 25% of the ordered list, \~56% of all interested customers are reached.
