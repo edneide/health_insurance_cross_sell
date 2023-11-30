@@ -20,6 +20,10 @@ output:
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
+# Introduction
+
+In this part we train the same algorithms as before, but now using cross validation and hyperparameter tuning. Performing cross-validation is crucial to assess the model's ability to generalize to unseen data, while hyperparameter tuning helps optimize the model's performance by adjusting the values of these parameters to achieve better results on test data. Together, these practices contribute to a more robust and accurate model
+
 # Imports
 
 ```{r pacotes}
@@ -39,9 +43,8 @@ library(tidymodels)
 
 # Helper Functions
 
-## Encoder function
-
 ```{r}
+# Encoders -----------
 region_encoder <- readRDS("region_encoder.rds")
 policy_encoder <- readRDS("policy_encoder.rds")
 
@@ -54,14 +57,9 @@ encoder_function <- function(df){
   select(-policy_sales_channel) %>% 
   rename(policy_sales_channel = policy_num) 
 }
-```
 
-## Top @K precision and recall
 
-This function returns a dataframe with K rows. The last row will have the values of @K metrics.
-
-```{r}
-# Creating function  --------------------------
+# Top @K metrics  --------------------------
 metrics_at_k_function <- function(model_name, model_results, k){
   
   df_results <- model_results %>% 
@@ -106,13 +104,8 @@ metrics_at_k_function <- function(model_name, model_results, k){
     
     return(list(metrics_at_k_df, final_at_k_df))
 }
-```
 
-## Gain & Lift Curves
-
-This function plot the gain and lift curves for the model.
-
-```{r}
+# Gain & Lift Curves -------------
 curves_function <-  function(model_results){
   gain_plt <- gain_curve(model_results, response, .pred_yes) %>% 
   autoplot()
@@ -147,10 +140,13 @@ df_test <- df_split %>%
 
 # Preprocessing
 
+LEMBRAR DE TIRAR O ID PARA TREINAR!!!!!!!!
+
 ```{r}
 # Featue engineering recipe
-df_recipe <- recipe(response ~., data = df_train) %>%
-  step_normalize(age, days_associated) %>%
+df_recipe <- recipe(response ~ .,
+       data = df_train %>% select(-id)) %>% 
+  step_normalize(age, days_associated) %>% 
   step_scale(health_annual_paid) %>% 
   step_dummy(all_nominal(), -all_outcomes())
 ```
@@ -158,7 +154,8 @@ df_recipe <- recipe(response ~., data = df_train) %>%
 # KFold cross validation
 
 ```{r}
-df_kfolds <- vfold_cv(df_train, v = 5, strata = response)
+df_kfolds <- vfold_cv(df_train %>% select(-id),
+                      v = 5, strata = response)
 ```
 
 # Models definition and hyperparameter tunning
@@ -167,23 +164,23 @@ df_kfolds <- vfold_cv(df_train, v = 5, strata = response)
 
 Time to tune: 1.217322 mins
 
-```{r}
+Time to train the final model: 4.43 secs
+
+```{r lr_specification}
 # Model Specification ----------
 lr_model <- logistic_reg(penalty = tune(), 
                          mixture = tune()) %>% 
   set_engine("glmnet") %>% 
   set_mode("classification")
-```
 
-```{r}
-# See parameters
+# See parameters ----------
 hardhat::extract_parameter_set_dials(lr_model)
 
 # Using dials package
 lr_grid <- grid_regular(extract_parameter_set_dials(lr_model), levels = 5)
 ```
 
-```{r, eval=FALSE}
+```{r lr_tune, eval=FALSE}
 library(glmnet)
 
 # Parallelize tuning process
@@ -202,7 +199,7 @@ print(end_time - start_time)
 saveRDS(lr_tune, "lr_tune.rds")
 ```
 
-```{r}
+```{r lr_finalize_model}
 # Select the best hyperparameters -----------
 lr_tune <- readRDS("lr_tune.rds")
 
@@ -218,7 +215,7 @@ lr_wkfl <- workflow() %>%
   add_recipe(df_recipe)
 ```
 
-```{r}
+```{r lr_results, eval=FALSE}
 # Train the final model ----------------
 doParallel::registerDoParallel()
 
@@ -228,28 +225,514 @@ start_time <- Sys.time()
 lr_res <- last_fit(lr_wkfl, df_split)
 
 end_time <- Sys.time()
-print(round(end_time - start_time, 2))
+print(end_time - start_time)
 
-time_training_lr <- end_time - start_time
-saveRDS(time_training_lr, "time_training_lr.rds")
-
+saveRDS(lr_res, "lr_res.rds")
 ```
 
-```{r}
+```{r lr_confusion_matrix}
+lr_res <- readRDS("lr_res.rds")
+
 # Confusion matrix
 lr_res %>% 
   unnest(.predictions) %>% 
   conf_mat(truth = response, estimate = .pred_class)
 ```
 
-As we can see, the model classified all the client intention to sign for a new insurance as "no", even with the parameter tunning.
+As we can see, the model classified all the client intention to sign for a new insurance as "no", even with the parameter tuning.
 
-```{r}
+```{r lr_final_metrics_and_curves}
 lr_results <- lr_res %>% 
   unnest(.predictions) %>% 
   select(.pred_yes:response)
 
 lr_metrics_at_k <- metrics_at_k_function("Logistic Regression", lr_results, 2000)
 
-lr_metrics_at_k[[2]]
+# Metrics @K ------------
+lr_metrics_at_k_final <- lr_metrics_at_k[[2]]
+lr_metrics_at_k_final
+
+# Gain and lift curves ---------
+curves_function(lr_results)
+```
+
+**Gain**: By approaching 25% of the ordered list, \~61% of all interested customers are reached.
+
+**Lift**: By approaching 25% of the ordered list, the model performs \~2.4 times better than the random list.
+
+## Decision Tree 💻
+
+Time to tune: 3.918506 mins
+
+Time to train the final model: 14.88183 secs
+
+```{r dt_specification}
+# Model Specification ----------
+tree_model <- decision_tree(
+  cost_complexity = tune(),
+  tree_depth = tune(),
+  min_n = tune()
+) %>%
+  set_engine("rpart") %>%
+  set_mode("classification")
+
+# See parameters
+hardhat::extract_parameter_set_dials(tree_model)
+
+# Using dials package
+tree_grid <- grid_regular(extract_parameter_set_dials(tree_model), levels = 3)
+```
+
+```{r dt_tune, eval=FALSE}
+library(glmnet)
+
+# Parallelize tuning process
+doParallel::registerDoParallel()
+
+# Tune package
+start_time <- Sys.time()
+
+tree_tune <- tune_grid(tree_model, df_recipe, 
+                     resamples = df_kfolds,
+                     grid = tree_grid)
+
+end_time <- Sys.time()
+
+print(end_time - start_time)
+
+saveRDS(tree_tune, "tree_tune.rds")
+```
+
+```{r dt_finalize_model}
+# Select the best hyperparameters -----------
+tree_tune <- readRDS("tree_tune.rds")
+
+tree_param <- tree_tune %>% 
+  select_best("roc_auc")
+
+# Apply the hyperparameters to the model ----------
+tidy_tree_model <- finalize_model(tree_model, tree_param)
+
+# Create workflow ----------
+tree_wkfl <- workflow() %>% 
+  add_model(tidy_tree_model) %>% 
+  add_recipe(df_recipe)
+```
+
+```{r tree_results, eval=FALSE}
+# Train the final model ----------------
+doParallel::registerDoParallel()
+
+start_time <- Sys.time()
+
+# Train the model
+tree_res <- last_fit(tree_wkfl, df_split)
+
+end_time <- Sys.time()
+print(end_time - start_time)
+
+saveRDS(tree_res, "tree_res.rds")
+```
+
+```{r tree_confusion_matrix}
+tree_res <- readRDS("tree_res.rds")
+
+# Confusion matrix
+tree_res %>% 
+  unnest(.predictions) %>% 
+  conf_mat(truth = response, estimate = .pred_class)
+```
+
+```{r tree_final_metrics_and_curves}
+tree_results <- tree_res %>% 
+  unnest(.predictions) %>% 
+  select(.pred_yes:response)
+
+tree_metrics_at_k <- metrics_at_k_function("Decision Tree", tree_results, 2000)
+
+# Metrics @K ------------
+dt_metrics_at_k_final <- tree_metrics_at_k[[2]]
+dt_metrics_at_k_final
+
+# Gain and lift curves ---------
+curves_function(tree_results)
+```
+
+**Gain**: By approaching 25% of the ordered list, \~62% of all interested customers are reached.
+
+**Lift**: By approaching 25% of the ordered list, the model performs \~2.65 times better than the random list.
+
+## Random Forest 💻
+
+Time to tune: 17.70377 mins
+
+Time to train the final model: 1.552191 mins
+
+```{r rf_specification}
+# Model Specification ----------
+rf_model <- rand_forest(
+  mtry = tune(),
+  trees = 100,
+  min_n = tune()
+) %>%
+  set_engine("ranger") %>%
+  set_mode("classification")
+
+# See parameters
+hardhat::extract_parameter_set_dials(rf_model)
+
+# Using dials package
+rf_grid <- grid_regular(
+  mtry(range = c(10, 300)),
+  min_n(range = c(100, 1000)),
+  levels = 3
+  )
+```
+
+```{r rf_tune, eval=FALSE}
+# Parallelize tuning process
+doParallel::registerDoParallel()
+
+# Tune package
+start_time <- Sys.time()
+
+rf_tune <- tune_grid(rf_model, df_recipe, 
+                     resamples = df_kfolds,
+                     grid = rf_grid)
+
+end_time <- Sys.time()
+
+print(end_time - start_time)
+
+saveRDS(rf_tune, "rf_tune.rds")
+```
+
+```{r rf_finalize_model}
+# Select the best hyperparameters -----------
+rf_tune <- readRDS("rf_tune.rds")
+
+rf_param <- rf_tune %>% 
+  select_best("roc_auc")
+
+# Apply the hyperparameters to the model ----------
+tidy_rf_model <- finalize_model(rf_model, rf_param)
+
+# Create workflow ----------
+rf_wkfl <- workflow() %>% 
+  add_model(tidy_rf_model) %>% 
+  add_recipe(df_recipe)
+```
+
+```{r rf_results, eval=FALSE}
+# Train the final model ----------------
+doParallel::registerDoParallel()
+
+start_time <- Sys.time()
+
+# Train the model
+rf_res <- last_fit(rf_wkfl, df_split)
+
+end_time <- Sys.time()
+print(end_time - start_time)
+
+saveRDS(rf_res, "rf_res.rds")
+```
+
+```{r rf_confusion_matrix}
+rf_res <- readRDS("rf_res.rds")
+
+# Confusion matrix
+rf_res %>% 
+  unnest(.predictions) %>% 
+  conf_mat(truth = response, estimate = .pred_class)
+```
+
+```{r rf_final_metrics_and_curves}
+rf_results <- rf_res %>% 
+  unnest(.predictions) %>% 
+  select(.pred_yes:response)
+
+rf_metrics_at_k <- metrics_at_k_function("Random Forest", rf_results, 2000)
+
+# Metrics @K ------------
+rf_metrics_at_k_final <- rf_metrics_at_k[[2]]
+rf_metrics_at_k_final
+
+# Gain and lift curves ---------
+curves_function(rf_results)
+```
+
+**Gain**: By approaching 25% of the ordered list, \~68% of all interested customers are reached.
+
+**Lift**: By approaching 25% of the ordered list, the model performs \~2.7times better than the random list.
+
+# XGBoost 💻
+
+Time to tune: 28.93869 mins
+
+Time to train the final model: 5.126836 mins
+
+```{r xgb_specification}
+# Model Specification ----------
+xgb_model <- boost_tree(
+  trees = 1000,
+  tree_depth = tune(),
+  min_n = tune(),
+  loss_reduction = tune(),
+  sample_size = tune(),
+  mtry = tune(),
+  learn_rate = tune()
+) %>%
+  set_engine("xgboost") %>%
+  set_mode("classification")
+
+# See parameters
+hardhat::extract_parameter_set_dials(xgb_model)
+
+# Using dials package
+xgb_grid <- grid_latin_hypercube(
+  tree_depth(),
+  min_n(),
+  loss_reduction(),
+  sample_size = sample_prop(),
+  finalize(mtry(), df_train),
+  learn_rate(),
+  size = 10
+)
+```
+
+*Notice that we had to treat mtry() differently because it depends on the actual number of predictors in the data.*
+
+```{r xgb_tune, eval=FALSE}
+# Parallelize tuning process
+doParallel::registerDoParallel()
+
+# Tune package
+start_time <- Sys.time()
+
+xgb_tune <- tune_grid(xgb_model, df_recipe, 
+                     resamples = df_kfolds,
+                     grid = xgb_grid)
+
+end_time <- Sys.time()
+
+print(end_time - start_time)
+
+saveRDS(xgb_tune, "xgb_tune.rds")
+```
+
+```{r xgb_finalize_model}
+# Select the best hyperparameters -----------
+xgb_tune <- readRDS("xgb_tune.rds")
+
+xgb_param <- xgb_tune %>% 
+  select_best("roc_auc")
+
+# Apply the hyperparameters to the model ----------
+tidy_xgb_model <- finalize_model(xgb_model, xgb_param)
+
+# Create workflow ----------
+xgb_wkfl <- workflow() %>% 
+  add_model(tidy_xgb_model) %>% 
+  add_recipe(df_recipe)
+```
+
+```{r xgb_results, eval=FALSE}
+# Train the final model ----------------
+doParallel::registerDoParallel()
+
+start_time <- Sys.time()
+
+# Train the model
+xgb_res <- last_fit(xgb_wkfl, df_split)
+
+end_time <- Sys.time()
+print(end_time - start_time)
+
+saveRDS(xgb_res, "xgb_res.rds")
+```
+
+```{r xgb_confusion_matrix}
+xgb_res <- readRDS("xgb_res.rds")
+
+# Confusion matrix
+xgb_res %>% 
+  unnest(.predictions) %>% 
+  conf_mat(truth = response, estimate = .pred_class)
+```
+
+```{r xgb_final_metrics_and_curves}
+xgb_results <- xgb_res %>% 
+  unnest(.predictions) %>% 
+  select(.pred_yes:response)
+
+xgb_metrics_at_k <- metrics_at_k_function("XGBoost", xgb_results, 2000)
+
+# Metrics @K ------------
+xgb_metrics_at_k_final <- xgb_metrics_at_k[[2]]
+xgb_metrics_at_k_final
+
+# Gain and lift curves ---------
+curves_function(xgb_results)
+```
+
+**Gain**: By approaching 25% of the ordered list, \~70% of all interested customers are reached.
+
+**Lift**: By approaching 25% of the ordered list, the model performs \~2.8 times better than the random list.
+
+# KNN 💻
+
+Time to tune: 1.525734 hours
+
+Time to train the final model: Time difference of 26.91236 mins
+
+```{r knn_specification}
+# Model Specification ----------
+knn_model <- nearest_neighbor(neighbors = tune()) %>%
+  set_engine("kknn") %>%
+  set_mode("classification")
+
+# See parameters
+hardhat::extract_parameter_set_dials(knn_model)
+
+# Using dials package
+knn_grid <- grid_regular(
+  extract_parameter_set_dials(knn_model),
+  levels = 3
+)
+```
+
+```{r knn_tune, eval=FALSE}
+# Parallelize tuning process
+doParallel::registerDoParallel()
+
+# Tune package
+start_time <- Sys.time()
+
+knn_tune <- tune_grid(knn_model, df_recipe, 
+                     resamples = df_kfolds,
+                     grid = knn_grid)
+
+end_time <- Sys.time()
+
+print(end_time - start_time)
+
+saveRDS(knn_tune, "knn_tune.rds")
+```
+
+```{r knn_finalize_model}
+# Select the best hyperparameters -----------
+knn_tune <- readRDS("knn_tune.rds")
+
+knn_param <- knn_tune %>% 
+  select_best("roc_auc")
+
+# Apply the hyperparameters to the model ----------
+tidy_knn_model <- finalize_model(knn_model, knn_param)
+
+# Create workflow ----------
+knn_wkfl <- workflow() %>% 
+  add_model(tidy_knn_model) %>% 
+  add_recipe(df_recipe)
+```
+
+```{r knn_results, eval=FALSE}
+# Train the final model ----------------
+doParallel::registerDoParallel()
+
+start_time <- Sys.time()
+
+# Train the model
+knn_res <- last_fit(knn_wkfl, df_split)
+
+end_time <- Sys.time()
+print(end_time - start_time)
+
+saveRDS(knn_res, "knn_res.rds")
+```
+
+```{r knn_confusion_matrix}
+knn_res <- readRDS("knn_res.rds")
+
+# Confusion matrix
+knn_res %>% 
+  unnest(.predictions) %>% 
+  conf_mat(truth = response, estimate = .pred_class)
+```
+
+```{r knn_final_metrics_and_curves}
+knn_results <- knn_res %>% 
+  unnest(.predictions) %>% 
+  select(.pred_yes:response)
+
+knn_metrics_at_k <- metrics_at_k_function("KNN", knn_results, 2000)
+
+# Metrics @K ------------
+knn_metrics_at_k_final <- knn_metrics_at_k[[2]]
+knn_metrics_at_k_final
+
+# Gain and lift curves ---------
+curves_function(knn_results)
+```
+
+**Gain**: By approaching 25% of the ordered list, \~62% of all interested customers are reached.
+
+**Lift**: By approaching 25% of the ordered list, the model performs \~2.5 times better than the random list.
+
+# Model Comparison
+
+```{r model_comparison}
+model_comparison_df <- bind_rows(
+  lr_metrics_at_k_final,
+  dt_metrics_at_k_final,
+  rf_metrics_at_k_final,
+  xgb_metrics_at_k_final,
+  knn_metrics_at_k_final
+) %>% 
+  arrange(recall_at_k %>% desc())
+
+model_comparison_df
+```
+
+**Conclusion:** After cross validation and hyperparameter tuning, KNN have shown to be the best model when it comes to the recall @K metric. So, this model will be used to make predictions, and to deploy our application.
+
+# Saving the best model and test for prediction
+
+Time: 28 minutes
+
+```{r final_model, eval=FALSE}
+# Saving final model
+start_time <- Sys.time()
+doParallel::registerDoParallel()
+final_model <- fit(knn_wkfl, df_preprocessed)
+end_time <- Sys.time()
+print(end_time - start_time)
+saveRDS(final_model, "final_model.rds")
+```
+
+## Making predictions
+
+```{r}
+# Reading final model 
+final_model <- readRDS("final_model.rds")
+final_model$pre$mold$predictors %>% 
+  colnames() %>% 
+  tibble()
+  
+```
+
+```{r}
+# Making prediction 
+predict(final_model,
+        tibble(
+          "days_associated" = 299,        
+          "age" = 18,                   
+          "health_annual_paid" = 60000,    
+          "region_code" = 28,           
+          "policy_sales_channel" = 100,  
+          "vehicle_damage" = "yes",    
+          "previously_insured" = "no"),
+        type = "prob") %>%
+  gather() %>%
+  arrange(desc(value))
 ```
